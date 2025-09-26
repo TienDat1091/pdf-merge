@@ -220,6 +220,7 @@
         <div class="tabs">
             <button class="tab active" onclick="switchTab('merge')">Gộp PDF</button>
             <button class="tab" onclick="switchTab('convert')">PDF → Word</button>
+            <button class="tab" onclick="switchTab('pptx')">Gộp PowerPoint</button>
         </div>
 
         <!-- Tab Gộp PDF -->
@@ -261,6 +262,26 @@
 
             <div id="statusConvert"></div>
         </div>
+
+        <!-- Tab Gộp PowerPoint -->
+        <div id="pptx-tab" class="tab-content">
+            <div class="upload-area" id="uploadAreaPptx">
+                <div class="upload-icon">📊</div>
+                <p style="font-size: 1.2em; color: #666; margin-bottom: 10px;">
+                    Kéo thả file PowerPoint vào đây hoặc click để chọn
+                </p>
+                <p style="color: #999;">Hỗ trợ nhiều file .pptx</p>
+                <input type="file" id="fileInputPptx" accept=".pptx" multiple>
+            </div>
+
+            <div class="file-list" id="fileListPptx"></div>
+
+            <button class="action-btn" id="mergePptxBtn" disabled>
+                Gộp tất cả PowerPoint
+            </button>
+
+            <div id="statusPptx"></div>
+        </div>
     </div>
 
     <script>
@@ -270,6 +291,7 @@
         let currentTab = 'merge';
         let mergeFiles = [];
         let convertFile = null;
+        let pptxFiles = [];
 
         // Tab switching
         function switchTab(tab) {
@@ -280,9 +302,12 @@
             if (tab === 'merge') {
                 document.querySelector('.tab:nth-child(1)').classList.add('active');
                 document.getElementById('merge-tab').classList.add('active');
-            } else {
+            } else if (tab === 'convert') {
                 document.querySelector('.tab:nth-child(2)').classList.add('active');
                 document.getElementById('convert-tab').classList.add('active');
+            } else if (tab === 'pptx') {
+                document.querySelector('.tab:nth-child(3)').classList.add('active');
+                document.getElementById('pptx-tab').classList.add('active');
             }
         }
 
@@ -502,6 +527,175 @@ ${paragraphs}
         }
 
         convertBtn.addEventListener('click', convertPDFtoWord);
+
+        // ===== PPTX MERGE TAB =====
+        const uploadAreaPptx = document.getElementById('uploadAreaPptx');
+        const fileInputPptx = document.getElementById('fileInputPptx');
+        const fileListPptx = document.getElementById('fileListPptx');
+        const mergePptxBtn = document.getElementById('mergePptxBtn');
+        const statusPptx = document.getElementById('statusPptx');
+
+        uploadAreaPptx.addEventListener('click', () => fileInputPptx.click());
+
+        uploadAreaPptx.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadAreaPptx.classList.add('dragover');
+        });
+
+        uploadAreaPptx.addEventListener('dragleave', () => {
+            uploadAreaPptx.classList.remove('dragover');
+        });
+
+        uploadAreaPptx.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadAreaPptx.classList.remove('dragover');
+            const droppedFiles = Array.from(e.dataTransfer.files).filter(f => 
+                f.name.endsWith('.pptx')
+            );
+            addPptxFiles(droppedFiles);
+        });
+
+        fileInputPptx.addEventListener('change', (e) => {
+            addPptxFiles(Array.from(e.target.files));
+        });
+
+        function addPptxFiles(newFiles) {
+            pptxFiles = pptxFiles.concat(newFiles);
+            updatePptxFileList();
+            updatePptxButton();
+        }
+
+        function updatePptxFileList() {
+            fileListPptx.innerHTML = '';
+            pptxFiles.forEach((file, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `
+                    <span class="file-name">${index + 1}. ${file.name}</span>
+                    <button class="remove-btn" onclick="removePptxFile(${index})">Xóa</button>
+                `;
+                fileListPptx.appendChild(fileItem);
+            });
+        }
+
+        function removePptxFile(index) {
+            pptxFiles.splice(index, 1);
+            updatePptxFileList();
+            updatePptxButton();
+        }
+
+        function updatePptxButton() {
+            mergePptxBtn.disabled = pptxFiles.length < 2;
+        }
+
+        async function mergePowerPoints() {
+            if (pptxFiles.length < 2) return;
+
+            showStatus(statusPptx, 'Đang gộp các file PowerPoint...', 'processing');
+            mergePptxBtn.disabled = true;
+
+            try {
+                // Đọc file đầu tiên làm base
+                const baseArrayBuffer = await pptxFiles[0].arrayBuffer();
+                const baseZip = await JSZip.loadAsync(baseArrayBuffer);
+                
+                let slideCount = 0;
+                let maxSlideId = 0;
+                let maxRelId = 0;
+
+                // Đếm số slide trong file base
+                const slideFiles = Object.keys(baseZip.files).filter(name => 
+                    name.match(/ppt\/slides\/slide\d+\.xml$/)
+                );
+                slideCount = slideFiles.length;
+
+                // Tìm ID lớn nhất
+                for (const fileName of slideFiles) {
+                    const match = fileName.match(/slide(\d+)\.xml$/);
+                    if (match) {
+                        const id = parseInt(match[1]);
+                        if (id > maxSlideId) maxSlideId = id;
+                    }
+                }
+
+                // Đọc presentation.xml.rels để tìm rId lớn nhất
+                const presRelsContent = await baseZip.file('ppt/_rels/presentation.xml.rels').async('string');
+                const relMatches = presRelsContent.matchAll(/rId(\d+)/g);
+                for (const match of relMatches) {
+                    const id = parseInt(match[1]);
+                    if (id > maxRelId) maxRelId = id;
+                }
+
+                // Gộp các file còn lại
+                for (let i = 1; i < pptxFiles.length; i++) {
+                    const fileArrayBuffer = await pptxFiles[i].arrayBuffer();
+                    const fileZip = await JSZip.loadAsync(fileArrayBuffer);
+                    
+                    // Lấy các slide từ file này
+                    const fileslideFiles = Object.keys(fileZip.files).filter(name => 
+                        name.match(/ppt\/slides\/slide\d+\.xml$/)
+                    );
+
+                    for (const slideFileName of fileslideFiles) {
+                        slideCount++;
+                        maxSlideId++;
+                        maxRelId++;
+                        
+                        const newSlideName = `ppt/slides/slide${maxSlideId}.xml`;
+                        const slideContent = await fileZip.file(slideFileName).async('string');
+                        baseZip.file(newSlideName, slideContent);
+
+                        // Copy slide rels nếu có
+                        const slideRelFileName = slideFileName.replace('slides/', 'slides/_rels/').replace('.xml', '.xml.rels');
+                        if (fileZip.files[slideRelFileName]) {
+                            const newSlideRelName = `ppt/slides/_rels/slide${maxSlideId}.xml.rels`;
+                            const slideRelContent = await fileZip.file(slideRelFileName).async('string');
+                            baseZip.file(newSlideRelName, slideRelContent);
+                        }
+                    }
+                }
+
+                // Cập nhật presentation.xml
+                let presentationXml = await baseZip.file('ppt/presentation.xml').async('string');
+                let slideIdList = '<p:sldIdLst>';
+                for (let i = 1; i <= maxSlideId; i++) {
+                    slideIdList += `<p:sldId id="${255 + i}" r:id="rId${i + 1}"/>`;
+                }
+                slideIdList += '</p:sldIdLst>';
+                presentationXml = presentationXml.replace(/<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>/, slideIdList);
+                baseZip.file('ppt/presentation.xml', presentationXml);
+
+                // Cập nhật presentation.xml.rels
+                let presentationRels = await baseZip.file('ppt/_rels/presentation.xml.rels').async('string');
+                let relationships = '';
+                for (let i = 1; i <= maxSlideId; i++) {
+                    relationships += `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i}.xml"/>`;
+                }
+                presentationRels = presentationRels.replace(
+                    /(<Relationships[^>]*>)([\s\S]*?)(<\/Relationships>)/,
+                    `$1${relationships}$3`
+                );
+                baseZip.file('ppt/_rels/presentation.xml.rels', presentationRels);
+
+                // Tạo file PPTX mới
+                const mergedPptxBlob = await baseZip.generateAsync({type: 'blob'});
+                const url = URL.createObjectURL(mergedPptxBlob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'merged_presentation.pptx';
+                a.click();
+                
+                URL.revokeObjectURL(url);
+                showStatus(statusPptx, '✅ Gộp file PowerPoint thành công! File đã được tải xuống.', 'success');
+            } catch (error) {
+                showStatus(statusPptx, '❌ Có lỗi xảy ra: ' + error.message, 'error');
+            } finally {
+                mergePptxBtn.disabled = false;
+            }
+        }
+
+        mergePptxBtn.addEventListener('click', mergePowerPoints);
 
         // Utility function
         function showStatus(element, message, type) {
