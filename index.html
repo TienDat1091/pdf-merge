@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Công cụ Xử lý PDF</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            padding: 15px 30px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.1em;
+            color: #666;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: bold;
+        }
+
+        .tab:hover {
+            color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 30px;
+        }
+
+        .upload-area:hover {
+            background: #f0f4ff;
+            border-color: #764ba2;
+        }
+
+        .upload-area.dragover {
+            background: #e0e7ff;
+            border-color: #764ba2;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 4em;
+            margin-bottom: 10px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .file-list {
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .file-item {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s ease;
+        }
+
+        .file-item:hover {
+            background: #e9ecef;
+            transform: translateX(5px);
+        }
+
+        .file-name {
+            flex: 1;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .remove-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .remove-btn:hover {
+            background: #c82333;
+            transform: scale(1.05);
+        }
+
+        .action-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.2em;
+            border-radius: 10px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .action-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: 500;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status.processing {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .single-file {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .single-file-name {
+            font-size: 1.1em;
+            color: #333;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📄 Công cụ Xử lý PDF</h1>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('merge')">Gộp PDF</button>
+            <button class="tab" onclick="switchTab('convert')">PDF → Word</button>
+        </div>
+
+        <!-- Tab Gộp PDF -->
+        <div id="merge-tab" class="tab-content active">
+            <div class="upload-area" id="uploadAreaMerge">
+                <div class="upload-icon">📁</div>
+                <p style="font-size: 1.2em; color: #666; margin-bottom: 10px;">
+                    Kéo thả file PDF vào đây hoặc click để chọn
+                </p>
+                <p style="color: #999;">Hỗ trợ nhiều file PDF</p>
+                <input type="file" id="fileInputMerge" accept=".pdf" multiple>
+            </div>
+
+            <div class="file-list" id="fileListMerge"></div>
+
+            <button class="action-btn" id="mergeBtn" disabled>
+                Gộp tất cả PDF
+            </button>
+
+            <div id="statusMerge"></div>
+        </div>
+
+        <!-- Tab Chuyển đổi PDF sang Word -->
+        <div id="convert-tab" class="tab-content">
+            <div class="upload-area" id="uploadAreaConvert">
+                <div class="upload-icon">📄</div>
+                <p style="font-size: 1.2em; color: #666; margin-bottom: 10px;">
+                    Chọn 1 file PDF để chuyển sang Word
+                </p>
+                <p style="color: #999;">Hỗ trợ file .pdf</p>
+                <input type="file" id="fileInputConvert" accept=".pdf">
+            </div>
+
+            <div id="selectedFileConvert"></div>
+
+            <button class="action-btn" id="convertBtn" disabled>
+                Chuyển đổi sang Word
+            </button>
+
+            <div id="statusConvert"></div>
+        </div>
+    </div>
+
+    <script>
+        // PDF.js worker setup
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let currentTab = 'merge';
+        let mergeFiles = [];
+        let convertFile = null;
+
+        // Tab switching
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            
+            if (tab === 'merge') {
+                document.querySelector('.tab:nth-child(1)').classList.add('active');
+                document.getElementById('merge-tab').classList.add('active');
+            } else {
+                document.querySelector('.tab:nth-child(2)').classList.add('active');
+                document.getElementById('convert-tab').classList.add('active');
+            }
+        }
+
+        // ===== MERGE TAB =====
+        const uploadAreaMerge = document.getElementById('uploadAreaMerge');
+        const fileInputMerge = document.getElementById('fileInputMerge');
+        const fileListMerge = document.getElementById('fileListMerge');
+        const mergeBtn = document.getElementById('mergeBtn');
+        const statusMerge = document.getElementById('statusMerge');
+
+        uploadAreaMerge.addEventListener('click', () => fileInputMerge.click());
+
+        uploadAreaMerge.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadAreaMerge.classList.add('dragover');
+        });
+
+        uploadAreaMerge.addEventListener('dragleave', () => {
+            uploadAreaMerge.classList.remove('dragover');
+        });
+
+        uploadAreaMerge.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadAreaMerge.classList.remove('dragover');
+            const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+            addMergeFiles(droppedFiles);
+        });
+
+        fileInputMerge.addEventListener('change', (e) => {
+            addMergeFiles(Array.from(e.target.files));
+        });
+
+        function addMergeFiles(newFiles) {
+            mergeFiles = mergeFiles.concat(newFiles);
+            updateMergeFileList();
+            updateMergeButton();
+        }
+
+        function updateMergeFileList() {
+            fileListMerge.innerHTML = '';
+            mergeFiles.forEach((file, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `
+                    <span class="file-name">${index + 1}. ${file.name}</span>
+                    <button class="remove-btn" onclick="removeMergeFile(${index})">Xóa</button>
+                `;
+                fileListMerge.appendChild(fileItem);
+            });
+        }
+
+        function removeMergeFile(index) {
+            mergeFiles.splice(index, 1);
+            updateMergeFileList();
+            updateMergeButton();
+        }
+
+        function updateMergeButton() {
+            mergeBtn.disabled = mergeFiles.length < 2;
+        }
+
+        async function mergePDFs() {
+            if (mergeFiles.length < 2) return;
+
+            showStatus(statusMerge, 'Đang xử lý...', 'processing');
+            mergeBtn.disabled = true;
+
+            try {
+                const mergedPdf = await PDFLib.PDFDocument.create();
+
+                for (let file of mergeFiles) {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await PDFLib.PDFDocument.load(arrayBuffer);
+                    const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+                    copiedPages.forEach((page) => mergedPdf.addPage(page));
+                }
+
+                const mergedPdfBytes = await mergedPdf.save();
+                const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'merged.pdf';
+                a.click();
+                
+                URL.revokeObjectURL(url);
+                showStatus(statusMerge, '✅ Gộp file thành công! File đã được tải xuống.', 'success');
+            } catch (error) {
+                showStatus(statusMerge, '❌ Có lỗi xảy ra: ' + error.message, 'error');
+            } finally {
+                mergeBtn.disabled = false;
+            }
+        }
+
+        mergeBtn.addEventListener('click', mergePDFs);
+
+        // ===== CONVERT TAB =====
+        const uploadAreaConvert = document.getElementById('uploadAreaConvert');
+        const fileInputConvert = document.getElementById('fileInputConvert');
+        const selectedFileConvert = document.getElementById('selectedFileConvert');
+        const convertBtn = document.getElementById('convertBtn');
+        const statusConvert = document.getElementById('statusConvert');
+
+        uploadAreaConvert.addEventListener('click', () => fileInputConvert.click());
+
+        uploadAreaConvert.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadAreaConvert.classList.add('dragover');
+        });
+
+        uploadAreaConvert.addEventListener('dragleave', () => {
+            uploadAreaConvert.classList.remove('dragover');
+        });
+
+        uploadAreaConvert.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadAreaConvert.classList.remove('dragover');
+            const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+            if (droppedFiles.length > 0) {
+                setConvertFile(droppedFiles[0]);
+            }
+        });
+
+        fileInputConvert.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                setConvertFile(e.target.files[0]);
+            }
+        });
+
+        function setConvertFile(file) {
+            convertFile = file;
+            selectedFileConvert.innerHTML = `
+                <div class="single-file">
+                    <div class="single-file-name">📄 ${file.name}</div>
+                    <button class="remove-btn" onclick="removeConvertFile()">Xóa</button>
+                </div>
+            `;
+            convertBtn.disabled = false;
+        }
+
+        function removeConvertFile() {
+            convertFile = null;
+            selectedFileConvert.innerHTML = '';
+            convertBtn.disabled = true;
+            fileInputConvert.value = '';
+        }
+
+        async function convertPDFtoWord() {
+            if (!convertFile) return;
+
+            showStatus(statusConvert, 'Đang đọc và chuyển đổi PDF...', 'processing');
+            convertBtn.disabled = true;
+
+            try {
+                const arrayBuffer = await convertFile.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+                
+                let fullText = '';
+                
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    fullText += `--- Trang ${i} ---\n${pageText}\n\n`;
+                }
+
+                // Tạo file DOCX thực sự bằng JSZip
+                const zip = new JSZip();
+                
+                // Tạo cấu trúc file DOCX
+                zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`);
+
+                zip.folder('_rels').file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+
+                zip.folder('word').folder('_rels').file('document.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+</Relationships>`);
+
+                // Tạo nội dung document.xml với text từ PDF
+                const paragraphs = fullText.split('\n').map(line => {
+                    const escapedLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    return `<w:p><w:r><w:t xml:space="preserve">${escapedLine}</w:t></w:r></w:p>`;
+                }).join('');
+
+                zip.folder('word').file('document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:body>
+<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Nội dung từ: ${convertFile.name}</w:t></w:r></w:p>
+${paragraphs}
+</w:body>
+</w:document>`);
+
+                const blob = await zip.generateAsync({type: 'blob'});
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = convertFile.name.replace('.pdf', '.docx');
+                a.click();
+                
+                URL.revokeObjectURL(url);
+                showStatus(statusConvert, '✅ Chuyển đổi thành công! File Word (.docx) đã được tải xuống.', 'success');
+            } catch (error) {
+                showStatus(statusConvert, '❌ Có lỗi xảy ra: ' + error.message, 'error');
+            } finally {
+                convertBtn.disabled = false;
+            }
+        }
+
+        convertBtn.addEventListener('click', convertPDFtoWord);
+
+        // Utility function
+        function showStatus(element, message, type) {
+            element.textContent = message;
+            element.className = 'status ' + type;
+            if (type === 'success') {
+                setTimeout(() => {
+                    element.textContent = '';
+                    element.className = 'status';
+                }, 5000);
+            }
+        }
+    </script>
+</body>
+</html>
